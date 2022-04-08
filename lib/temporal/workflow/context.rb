@@ -16,11 +16,12 @@ require 'temporal/workflow/state_manager'
 module Temporal
   class Workflow
     class Context
-      attr_reader :metadata, :config
+      attr_reader :metadata, :config, :query_handlers
 
       def initialize(state_manager, dispatcher, workflow_class, metadata, config)
         @state_manager = state_manager
         @dispatcher = dispatcher
+        @query_handlers = {}
         @workflow_class = workflow_class
         @metadata = metadata
         @completed = false
@@ -298,6 +299,10 @@ module Temporal
         end
       end
 
+      def on_query(query, &block)
+        query_handlers[query] = block
+      end
+
       def cancel_activity(activity_id)
         command = Command::RequestActivityCancellation.new(activity_id: activity_id)
 
@@ -330,8 +335,6 @@ module Temporal
       #
       # @return [Future] future
       def signal_external_workflow(workflow, signal, workflow_id, run_id = nil, input = nil, namespace: nil, child_workflow_only: false)
-        options ||= {}
-
         execution_options = ExecutionOptions.new(workflow, {}, config.default_execution_options)
 
         command = Command::SignalExternalWorkflow.new(

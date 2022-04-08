@@ -36,13 +36,31 @@ module Temporal
         return state_manager.commands
       end
 
+      # @param query [Hash<String, Temporal::Workflow::TaskProcessor::Query>]
+      #
+      # @return [Hash<String, Temporal::Workflow::QueryResult>]
+      def process_queries(queries = {})
+        queries.transform_values(&method(:process_query))
+      end
+
       private
 
-      attr_reader :workflow_class, :dispatcher, :state_manager, :task_metadata, :history, :config
+      attr_reader :workflow_class, :dispatcher, :state_manager, :task_metadata, :history, :config, :context
+
+      def process_query(query)
+        unless context.query_handlers.key?(query.query_type)
+          raise Temporal::QueryFailedFailure, "Workflow did not register a handler for #{query.query_type}"
+        end
+
+        result = context.query_handlers[query.query_type].call(*query.query_args)
+        QueryResult.answer(result)
+      rescue StandardError => error
+        QueryResult.failure(error)
+      end
 
       def execute_workflow(input, workflow_started_event)
         metadata = Metadata.generate_workflow_metadata(workflow_started_event, task_metadata)
-        context = Workflow::Context.new(state_manager, dispatcher, workflow_class, metadata, config)
+        @context = Workflow::Context.new(state_manager, dispatcher, workflow_class, metadata, config)
 
         Fiber.new do
           workflow_class.execute_in_context(context, input)
